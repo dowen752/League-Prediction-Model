@@ -4,4 +4,5 @@ Using data collected directly from the Riot Games API, I built a full ML pipelin
 - Stores relational player/match data in SQLite
 - Engineers team-level features from rank, LP, and champion statistics
 - Trains a classification model to predict pre-game win probability
+
 The focus of this project is end-to-end system design: data ingestion, feature construction, and model evaluation.
