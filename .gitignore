@@ -9,3 +9,7 @@ model/
 
 # Env
 .env
+
+# Mac
+
+.DS_Store

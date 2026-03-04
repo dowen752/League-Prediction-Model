@@ -115,49 +115,27 @@ def get_rank_by_puuid(puuid: str):
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 
-CREATE TABLE IF NOT EXISTS players (
-    puuid TEXT PRIMARY KEY,
-    region TEXT NOT NULL,
-    first_seen_ts INTEGER NOT NULL,
-    last_seen_ts INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS matches (
-    match_id TEXT PRIMARY KEY,
-    queue_id INTEGER NOT NULL,
-    game_creation INTEGER NOT NULL,
-    game_duration INTEGER NOT NULL,
-    game_version TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS participants (
+CREATE TABLE IF NOT EXISTS match_participants (
     match_id TEXT NOT NULL,
     puuid TEXT NOT NULL,
-    team_id INTEGER NOT NULL,
-    champion_id INTEGER NOT NULL,
+    queue_id INTEGER,
+    game_creation INTEGER,
+    game_duration INTEGER,
+    game_version TEXT,
+    team_id INTEGER,
+    champion_id INTEGER,
     champion_name TEXT,
     team_position TEXT,
     individual_position TEXT,
-    win INTEGER NOT NULL,
+    win INTEGER,
     kills INTEGER,
     deaths INTEGER,
     assists INTEGER,
     PRIMARY KEY (match_id, puuid)
 );
 
-CREATE TABLE IF NOT EXISTS player_ranks (
-    puuid TEXT NOT NULL,
-    tier TEXT,
-    division TEXT,
-    league_points INTEGER,
-    wins INTEGER,
-    losses INTEGER,
-    snapshot_ts INTEGER NOT NULL,
-    PRIMARY KEY (puuid, snapshot_ts)
-);
-
-CREATE INDEX IF NOT EXISTS idx_participants_puuid ON participants(puuid);
-CREATE INDEX IF NOT EXISTS idx_rank_puuid ON player_ranks(puuid);
+CREATE INDEX IF NOT EXISTS idx_match_id ON match_participants(match_id);
+CREATE INDEX IF NOT EXISTS idx_puuid ON match_participants(puuid);
 """
 
 
@@ -166,43 +144,6 @@ def db_connect(path: str):
     conn.execute("PRAGMA foreign_keys=ON;")
     conn.executescript(SCHEMA_SQL)
     return conn
-
-
-# Helpers
-def upsert_player(conn, puuid, region, ts):
-    conn.execute("""
-        INSERT INTO players (puuid, region, first_seen_ts, last_seen_ts)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(puuid) DO UPDATE SET
-            last_seen_ts = excluded.last_seen_ts;
-    """, (puuid, region, ts, ts))
-
-
-def insert_rank_snapshot(conn, puuid, rank_data):
-    now_ts = int(time.time())
-
-    solo_entry = None
-    for entry in rank_data:
-        if entry["queueType"] == "RANKED_SOLO_5x5":
-            solo_entry = entry
-            break
-
-    if solo_entry is None:
-        return
-
-    conn.execute("""
-        INSERT OR IGNORE INTO player_ranks
-        (puuid, tier, division, league_points, wins, losses, snapshot_ts)
-        VALUES (?, ?, ?, ?, ?, ?, ?);
-    """, (
-        puuid,
-        solo_entry.get("tier"),
-        solo_entry.get("rank"),
-        solo_entry.get("leaguePoints"),
-        solo_entry.get("wins"),
-        solo_entry.get("losses"),
-        now_ts
-    ))
 
 
 # Parameters:
@@ -219,37 +160,35 @@ def ingest_match(conn, match):
     if info.get("queueId") != QUEUE_ID_RANKED_SOLO:
         return None
 
-    cursor = conn.execute("""
-        INSERT OR IGNORE INTO matches
-        (match_id, queue_id, game_creation, game_duration, game_version)
-        VALUES (?, ?, ?, ?, ?);
-    """, (
-        match_id,
-        info.get("queueId"),
-        info.get("gameCreation"),
-        info.get("gameDuration"),
-        info.get("gameVersion"),
-    ))
-    if cursor.rowcount == 1:
-        new_match = True
-    else:
-        new_match = False
+    new_rows = 0
 
     for p in info.get("participants", []):
-        puuid = p["puuid"]
-
-        # ensure player exists
-        upsert_player(conn, puuid, REGION, int(time.time()))
-
-        # insert participant edge
-        conn.execute("""
-            INSERT OR IGNORE INTO participants
-            (match_id, puuid, team_id, champion_id, champion_name,
-            team_position, individual_position, win, kills, deaths, assists)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        cursor = conn.execute("""
+            INSERT OR IGNORE INTO match_participants (
+                match_id,
+                puuid,
+                queue_id,
+                game_creation,
+                game_duration,
+                game_version,
+                team_id,
+                champion_id,
+                champion_name,
+                team_position,
+                individual_position,
+                win,
+                kills,
+                deaths,
+                assists
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, (
             match_id,
-            puuid,
+            p.get("puuid"),
+            info.get("queueId"),
+            info.get("gameCreation"),
+            info.get("gameDuration"),
+            info.get("gameVersion"),
             p.get("teamId"),
             p.get("championId"),
             p.get("championName"),
@@ -260,7 +199,11 @@ def ingest_match(conn, match):
             p.get("deaths"),
             p.get("assists"),
         ))
-    return new_match
+
+        if cursor.rowcount == 1:
+            new_rows += 1
+
+    return new_rows > 0
 
 
 
@@ -284,7 +227,6 @@ def api_cycle(conn):
         seen.add(puuid)
 
         now = int(time.time())
-        upsert_player(conn, puuid, REGION, now)
 
         # TODO: Move this to separate script
         
@@ -316,7 +258,7 @@ def main():
     conn = db_connect(DB_PATH)
 
     while True:
-        print("\n--- crawl cycle start ---")
+        print("\n--- api cycle start ---")
         stats = api_cycle(conn)
         print("Cycle stats:", stats)
         print("Sleeping for a minute..")
