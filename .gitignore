@@ -3,6 +3,7 @@ riot_lol.sqlite
 riot_lol.sqlite-shm
 riot_lol.sqlite-wal
 riot_lol
+data
 
 # model folder for now
 model/
@@ -13,3 +14,9 @@ model/
 # Mac
 
 .DS_Store
+
+# Catboost info
+catboost_info
+
+# ipynb
+.ipynb_checkpoints

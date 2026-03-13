@@ -162,7 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_rank_puuid ON player_ranks(puuid);
 
 
 def db_connect(path: str):
-    conn = sqlite3.connect(path)
+    full_path = os.path.abspath(os.path.join("data", path))
+    conn = sqlite3.connect(full_path)
     conn.execute("PRAGMA foreign_keys=ON;")
     conn.executescript(SCHEMA_SQL)
     return conn

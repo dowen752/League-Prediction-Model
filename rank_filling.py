@@ -17,8 +17,7 @@ HEADERS = {"X-Riot-Token": RIOT_API_KEY}
 REGION = "na1"
 DB_PATH = "riot_lol.sqlite"
 
-BATCH_SIZE = 100
-
+BATCH_SIZE = 50
 
 
 def riot_get(url: str, params: Optional[Dict[str, Any]] = None):
@@ -48,7 +47,8 @@ def get_rank_by_puuid(puuid: str):
 # Helpers
 
 def db_connect(path: str):
-    conn = sqlite3.connect(path)
+    full_path = os.path.abspath(os.path.join("data", path))
+    conn = sqlite3.connect(full_path)
     conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
@@ -123,7 +123,7 @@ def fill_ranks():
             print(f"[ERROR] {puuid}: {e}")
 
         processed += 1
-
+        
         if processed % BATCH_SIZE == 0:
             print(f"Processed {processed}/{len(players)}")
 

@@ -6,7 +6,7 @@ import requests
 import time
 import json
 
-
+# DEPRECATED
 
 load_dotenv()
 
