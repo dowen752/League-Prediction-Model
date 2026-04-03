@@ -34,8 +34,6 @@ def build_features(df: pd.DataFrame, gb = False) -> pd.DataFrame:
     # difference btwn team points
     df["lp_diff"] = df["team_avg_points"] - df["enemy_avg_points"]
 
-    # Switching to categorical target
-    df["win"] = df["win"].replace({1: "Win", 0: "Loss"})
     
     df["rank"] = df["tier"].map(tier_map) + df["division"].map(division_map) # encoded tier + div value between 0-40
 
@@ -52,26 +50,34 @@ def encoding_categoricals(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def train_test_val_sets(df, gb = False):
-    if gb:
-        X = df[['champion_id', 'team_position','league_points', 
+def train_test_val_sets(df: pd.DataFrame, gb = False):
+    
+    df = df[['champion_id', 'team_position','league_points', 
                 'wins', 'losses', 'winrate', 
                 'rank', 'team_avg_points', 'enemy_avg_points', 
-                'lp_diff']]
-    else:
-        X = df[['champion_id', 'team_position',
-                'league_points', 'wins', 
-                'losses', 'winrate', 
-                'rank', 'team_avg_points', 
-                'enemy_avg_points', 'lp_diff']].values
-        
-    y = df['win'].values
+                'lp_diff', 'win']]
 
-    # X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size = 0.2, random_state = 42)
-    # X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size = 0.5, random_state = 42)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.15, random_state = 42)
-
+    df_train, df_test = train_test_split(df, test_size = 0.15, random_state = 42)
+    
+    df_train = df_train.copy()
+    df_test = df_test.copy()
+    
+    wr_train = df_train.groupby("champion_id")["win"].mean()
+    
+    df_train["champ_wr"] = df_train["champion_id"].map(wr_train)
+    df_test["champ_wr"] = df_test["champion_id"].map(wr_train)
+    
+    df_train["champ_wr"] = df_train["champ_wr"].fillna(0.5)
+    df_test["champ_wr"] = df_test["champ_wr"].fillna(0.5)
+    
+    X_train = df_train.drop(columns='win')
+    X_test = df_test.drop(columns='win')
+    
+    # Switching to categorical targets
+    y_train = df_train['win'].replace({1: "Win", 0: "Loss"})
+    y_test = df_test['win'].replace({1: "Win", 0: "Loss"})
+    
     return X_train, X_test, y_train, y_test
     
 
@@ -90,7 +96,7 @@ def cat_boost_train(X_train, X_test, y_train, y_test, iters, lr = 0.05):
         learning_rate = lr,
         random_seed = 42
     )
-
+        
     cat_boost.fit(X_train, y_train, cat_features = ["team_position", "champion_id"], verbose = False)
     y_pred =cat_boost.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
